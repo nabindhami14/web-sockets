@@ -1,53 +1,75 @@
 import express from "express";
-import { createServer } from "node:http";
-
 import { Server } from "socket.io";
-import sqlite3 from "sqlite3";
-import { open } from "sqlite";
+import { createServer } from "http";
+import cors from "cors";
+import jwt from "jsonwebtoken";
+import cookieParser from "cookie-parser";
+
+const secretKeyJWT = "asdasdsadasdasdasdsa";
+const port = 4000;
 
 const app = express();
-const httpServer = createServer(app);
-const io = new Server(httpServer, {
-  connectionStateRecovery: {},
+const server = createServer(app);
+const io = new Server(server, {
   cors: {
     origin: "http://localhost:5173",
+    methods: ["GET", "POST"],
+    credentials: true,
   },
 });
 
-// open the database file
-const db = await open({
-  filename: "chat.db",
-  driver: sqlite3.Database,
-});
-
-// create our 'messages' table (you can ignore the 'client_offset' column for now)
-await db.exec(`
-    CREATE TABLE IF NOT EXISTS messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name VARCHAR(50),
-        client_offset TEXT UNIQUE,
-        content TEXT
-    );
-  `);
+app.use(
+  cors({
+    origin: "http://localhost:5173",
+    methods: ["GET", "POST"],
+    credentials: true,
+  })
+);
 
 app.get("/", (req, res) => {
-  res.send("<h1>Hello world</h1>");
+  res.send("Hello World!");
+});
+
+app.get("/login", (req, res) => {
+  const token = jwt.sign({ _id: "asdasjdhkasdasdas" }, secretKeyJWT);
+
+  res
+    .cookie("token", token, { httpOnly: true, secure: true, sameSite: "none" })
+    .json({
+      message: "Login Success",
+    });
+});
+
+io.use((socket, next) => {
+  cookieParser()(socket.request, socket.request.res, (err) => {
+    if (err) return next(err);
+
+    const token = socket.request.cookies.token;
+    if (!token) return next(new Error("Authentication Error"));
+
+    const decoded = jwt.verify(token, secretKeyJWT);
+    next();
+  });
 });
 
 io.on("connection", (socket) => {
-  socket.on("chat message", async ({ name, message }) => {
-    await db.run(
-      "INSERT INTO messages (name,content) VALUES (?,?)",
-      name,
-      message
-    );
+  console.log("User Connected", socket.id);
 
-    io.emit("message", { name, message });
+  socket.on("message", ({ room, message }) => {
+    console.log({ room, message });
+    socket.to(room).emit("receive-message", message);
+  });
+
+  socket.on("join-room", (room) => {
+    socket.join(room);
+    console.log(`User joined room ${room}`);
   });
 
   socket.on("disconnect", () => {
-    console.log(`Socket ${socket.id} disconnected`);
+    console.log("User Disconnected", socket.id);
   });
 });
 
-httpServer.listen(4000);
+server.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
+});

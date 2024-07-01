@@ -1,59 +1,109 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { io } from "socket.io-client";
-
-const socket = io("http://localhost:4000");
-
-interface IMessage {
-  name: string;
-  message: string;
-}
+import {
+  Box,
+  Button,
+  Container,
+  Stack,
+  TextField,
+  Typography,
+} from "@mui/material";
 const App = () => {
-  const [name, setName] = useState("");
+  const socket = useMemo(
+    () =>
+      io("http://localhost:4000", {
+        withCredentials: true,
+      }),
+    []
+  );
+
+  const [messages, setMessages] = useState([]);
   const [message, setMessage] = useState("");
-  const [messages, setMessages] = useState<IMessage[]>([]);
+  const [room, setRoom] = useState("");
+  const [socketID, setSocketId] = useState("");
+  const [roomName, setRoomName] = useState("");
 
-  useEffect(() => {
-    socket.on("message", (msg) => {
-      setMessages((messages) => [...messages, msg]);
-    });
-  }, []);
-
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-
-    if (name && message) {
-      socket.emit("chat message", { name, message });
-      setName("");
-      setMessage("");
-    }
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    socket.emit("message", { message, room });
+    setMessage("");
   };
 
+  const joinRoomHandler = (e) => {
+    e.preventDefault();
+    socket.emit("join-room", roomName);
+    setRoomName("");
+  };
+
+  useEffect(() => {
+    socket.on("connect", () => {
+      setSocketId(socket.id);
+      console.log("connected", socket.id);
+    });
+
+    socket.on("receive-message", (data) => {
+      console.log(data);
+      setMessages((messages) => [...messages, data]);
+    });
+
+    socket.on("welcome", (s) => {
+      console.log(s);
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
+
   return (
-    <div>
-      <form onSubmit={handleSubmit}>
-        <input
-          type="text"
-          value={name}
-          placeholder="Your name"
-          onChange={(event) => setName(event.target.value)}
+    <Container maxWidth="sm">
+      <Box sx={{ height: 500 }} />
+      <Typography variant="h6" component="div" gutterBottom>
+        {socketID}
+      </Typography>
+
+      <form onSubmit={joinRoomHandler}>
+        <h5>Join Room</h5>
+        <TextField
+          value={roomName}
+          onChange={(e) => setRoomName(e.target.value)}
+          id="outlined-basic"
+          label="Room Name"
+          variant="outlined"
         />
-        <input
-          type="text"
-          value={message}
-          placeholder="Your message"
-          onChange={(event) => setMessage(event.target.value)}
-        />
-        <button type="submit">Send</button>
+        <Button type="submit" variant="contained" color="primary">
+          Join
+        </Button>
       </form>
 
-      <ul>
-        {messages.map((message, index) => (
-          <li key={index}>
-            {message.name}: {message.message}
-          </li>
+      <form onSubmit={handleSubmit}>
+        <TextField
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          id="outlined-basic"
+          label="Message"
+          variant="outlined"
+        />
+        <TextField
+          value={room}
+          onChange={(e) => setRoom(e.target.value)}
+          id="outlined-basic"
+          label="Room"
+          variant="outlined"
+        />
+        <Button type="submit" variant="contained" color="primary">
+          Send
+        </Button>
+      </form>
+
+      <Stack>
+        {messages.map((m, i) => (
+          <Typography key={i} variant="h6" component="div" gutterBottom>
+            {m}
+          </Typography>
         ))}
-      </ul>
-    </div>
+      </Stack>
+    </Container>
   );
 };
 
